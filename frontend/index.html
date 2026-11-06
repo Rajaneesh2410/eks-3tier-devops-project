@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Employee Management</title>
+    <style>
+        body {
+            font-family: Arial;
+            background: #f2f4f8;
+            padding: 40px;
+        }
+
+        .container {
+            background: white;
+            padding: 25px;
+            border-radius: 10px;
+            max-width: 650px;
+            margin: auto;
+        }
+
+        input, button {
+            padding: 10px;
+            margin: 5px;
+        }
+
+        button {
+            background: #2563eb;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+
+        li {
+            padding: 8px;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>Employee Management System</h1>
+
+    <h3>Add Employee</h3>
+
+    <input id="name" placeholder="Employee Name">
+    <input id="role" placeholder="Employee Role">
+
+    <button onclick="addEmployee()">Add Employee</button>
+
+    <h3>Employee List</h3>
+    <ul id="employees"></ul>
+</div>
+
+<script>
+const API_URL = "/api";
+async function loadEmployees() {
+    const response = await fetch(`${API_URL}/employees`);
+    const employees = await response.json();
+
+    document.getElementById("employees").innerHTML =
+        employees.map(emp =>
+            `<li>${emp.name} - ${emp.role}</li>`
+        ).join("");
+}
+
+async function addEmployee() {
+    const name = document.getElementById("name").value;
+    const role = document.getElementById("role").value;
+
+    await fetch(`${API_URL}/employees`, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({name, role})
+    });
+
+    loadEmployees();
+}
+
+loadEmployees();
+</script>
+</body>
+</html>
+
