@@ -1,38 +1,40 @@
 # Employee Management System – 3-Tier DevOps Project
 
-A containerized Employee Management application deployed using Docker, Kubernetes (Kind), and Terraform. This project demonstrates a practical DevOps workflow covering application containerization, database integration, Kubernetes orchestration, infrastructure provisioning, and deployment verification.
+A containerized Employee Management application deployed on a local Kubernetes cluster using Docker, Kind, and Terraform. This project demonstrates an end-to-end DevOps workflow involving application containerization, CI automation, Kubernetes orchestration, GitOps deployment, infrastructure as code, and monitoring.
 
 ## Project Overview
 
-This project implements a three-tier architecture:
+The application follows a three-tier architecture:
 
 - **Frontend:** HTML and Nginx
 - **Backend:** Python Flask and Gunicorn REST API
 - **Database:** PostgreSQL 16
 
-The application supports employee record management through a web interface. Docker Compose is used for local multi-container deployment, while Kubernetes (Kind) is used for container orchestration. Terraform provisions the local Kubernetes cluster.
+The project uses Docker Compose for local application deployment and Kubernetes (Kind) for container orchestration. Terraform provisions the local Kind cluster. GitHub Actions automates testing and image builds, Argo CD manages GitOps-based deployment, and Prometheus and Grafana provide monitoring.
 
 ## Architecture
 
 ```mermaid
 flowchart TD
-    U[User / Browser]
-    F[Frontend - Nginx]
-    B[Backend - Flask API]
-    D[(PostgreSQL Database)]
+    U[User / Browser] --> F[Frontend - Nginx]
+    F -->|API requests| B[Backend - Flask]
+    B -->|SQL queries| D[(PostgreSQL)]
 
-    U --> F
-    F -->|/api requests| B
-    B -->|SQL queries| D
-
-    subgraph K[Kind Kubernetes Cluster]
+    subgraph K[Local Kind Kubernetes Cluster]
         F
         B
         D
+        A[Argo CD]
+        P[Prometheus]
+        G[Grafana]
     end
 
-    T[Terraform]
-    T -->|Provisions local cluster| K
+    T[Terraform] -->|Provisions| K
+    R[GitHub Repository] --> C[GitHub Actions CI]
+    R --> A
+    C -->|Tests and builds images| R
+    P -->|Collects metrics| K
+    P --> G
 ```
 
 ## Technology Stack
@@ -43,23 +45,32 @@ flowchart TD
 | Backend | Python, Flask, Gunicorn |
 | Database | PostgreSQL 16 |
 | Containerization | Docker |
-| Local orchestration | Docker Compose |
+| Local multi-container deployment | Docker Compose |
 | Container orchestration | Kubernetes |
 | Local Kubernetes cluster | Kind |
 | Infrastructure as Code | Terraform |
+| CI automation | GitHub Actions |
+| GitOps / Continuous Delivery | Argo CD |
+| Monitoring | Prometheus, Grafana, Alertmanager |
 | Version control | Git, GitHub |
-| CI/CD foundation | GitHub repository and deployment workflow |
+| Operating environment | Ubuntu on WSL |
 
 ## Project Structure
 
 ```text
 eks-3tier-devops-project/
 │
+├── .github/
+│   └── workflows/
+│       └── ci.yml
+│
 ├── backend/
 │   ├── app.py
 │   ├── init.sql
 │   ├── requirements.txt
-│   └── Dockerfile
+│   ├── Dockerfile
+│   └── tests/
+│       └── test_app.py
 │
 ├── frontend/
 │   ├── index.html
@@ -74,6 +85,8 @@ eks-3tier-devops-project/
 ├── terraform/
 │   └── main.tf
 │
+├── argocd/
+│
 ├── screenshots/
 │   └── employee-management-project/
 │
@@ -82,7 +95,7 @@ eks-3tier-devops-project/
 └── README.md
 ```
 
-## Application Deployment Using Docker Compose
+## 1. Run the Application Using Docker Compose
 
 ### Prerequisites
 
@@ -90,14 +103,14 @@ eks-3tier-devops-project/
 - Docker
 - Docker Compose
 
-### 1. Clone the repository
+### Clone the repository
 
 ```bash
 git clone https://github.com/Rajaneesh2410/eks-3tier-devops-project.git
 cd eks-3tier-devops-project
 ```
 
-### 2. Configure environment variables
+### Configure environment variables
 
 Create a local `.env` file:
 
@@ -105,7 +118,7 @@ Create a local `.env` file:
 nano .env
 ```
 
-Add the following configuration, replacing the example password with your own strong password:
+Add the following configuration and replace the example password with your own:
 
 ```env
 POSTGRES_DB=employees
@@ -118,35 +131,33 @@ DB_USER=admin
 DB_PASSWORD=replace_with_the_same_password
 ```
 
-The `.env` file is excluded from Git using `.gitignore`.
+The `.env` file is excluded from Git using `.gitignore`. Never commit real credentials.
 
-### 3. Build and start the containers
+### Build and start the containers
 
 ```bash
 docker compose up -d --build
 ```
 
-### 4. Verify containers
+Verify the containers:
 
 ```bash
 docker compose ps
 ```
 
-### 5. Access the application
+Access the application:
 
-Open:
+```text
+http://localhost:8081
+```
 
-`http://localhost:8081`
-
-### 6. Stop the application
+Stop the application:
 
 ```bash
 docker compose down
 ```
 
-## Kubernetes Deployment Using Kind
-
-This project uses Kind to run a local Kubernetes cluster.
+## 2. Kubernetes Deployment Using Kind
 
 ### Prerequisites
 
@@ -155,7 +166,7 @@ This project uses Kind to run a local Kubernetes cluster.
 - Kind
 - Terraform
 
-### 1. Provision the Kubernetes cluster using Terraform
+### Provision the local Kubernetes cluster
 
 ```bash
 cd terraform
@@ -167,13 +178,14 @@ terraform apply
 
 Confirm the operation when prompted.
 
-### 2. Verify the cluster
+Verify the cluster:
 
 ```bash
 kubectl get nodes
+kubectl config current-context
 ```
 
-### 3. Build the application images
+### Build the application images
 
 From the project root:
 
@@ -183,16 +195,16 @@ docker build -t employee-backend:v1 ./backend
 docker build -t employee-frontend:v2 ./frontend
 ```
 
-### 4. Load images into Kind
+### Load images into Kind
 
 ```bash
 kind load docker-image employee-backend:v1 --name terraform-devops-cluster
 kind load docker-image employee-frontend:v2 --name terraform-devops-cluster
 ```
 
-### 5. Create the PostgreSQL Kubernetes Secret
+### Create the PostgreSQL Secret
 
-Create the Secret locally before deploying the manifests. Replace the example password with your own:
+Create the database Secret locally before deploying the Kubernetes manifests. Replace the example password with your own:
 
 ```bash
 kubectl create secret generic postgres-secret \
@@ -201,17 +213,14 @@ kubectl create secret generic postgres-secret \
   --from-literal=POSTGRES_DB=employees
 ```
 
-Do not commit real credentials to GitHub.
+Do not store actual credentials in GitHub.
 
-### 6. Deploy the application
+### Deploy the application
+
+Deploy PostgreSQL first:
 
 ```bash
 kubectl apply -f k8s/postgres.yaml
-```
-
-Wait for PostgreSQL to become ready:
-
-```bash
 kubectl rollout status deployment/postgres
 ```
 
@@ -222,7 +231,7 @@ kubectl apply -f k8s/backend.yaml
 kubectl apply -f k8s/frontend.yaml
 ```
 
-### 7. Verify Kubernetes resources
+Verify the resources:
 
 ```bash
 kubectl get pods
@@ -230,9 +239,7 @@ kubectl get services
 kubectl get deployments
 ```
 
-### 8. Access the application
-
-Forward the frontend service to your local machine:
+### Access the application
 
 ```bash
 kubectl port-forward service/employee-frontend-service 8083:80
@@ -240,13 +247,15 @@ kubectl port-forward service/employee-frontend-service 8083:80
 
 Open:
 
-`http://localhost:8083`
+```text
+http://localhost:8083
+```
 
-Keep the port-forward terminal running while accessing the application.
+Keep the port-forward terminal open while accessing the application.
 
-## Infrastructure as Code – Terraform
+## 3. Infrastructure as Code – Terraform
 
-Terraform provisions the local Kind cluster using the `tehcyx/kind` provider.
+Terraform provisions the local Kind Kubernetes cluster using the Kind provider.
 
 Configuration highlights:
 
@@ -254,7 +263,7 @@ Configuration highlights:
 - Kubernetes node image: `kindest/node:v1.31.0`
 - Node role: Control plane
 
-Useful commands:
+Useful Terraform commands:
 
 ```bash
 terraform init
@@ -267,9 +276,115 @@ terraform destroy
 
 **Note:** `terraform destroy` deletes the Terraform-managed local Kind cluster. Use it only when you intend to remove the cluster.
 
-## Database and Storage
+## 4. CI Automation – GitHub Actions
 
-PostgreSQL is deployed as a Kubernetes Deployment with:
+A GitHub Actions workflow is configured in `.github/workflows/ci.yml`.
+
+The workflow performs:
+
+1. Checks out the source code.
+2. Sets up Python.
+3. Installs backend dependencies.
+4. Runs backend tests using pytest.
+5. Builds the backend Docker image.
+6. Builds the frontend Docker image.
+
+The backend test suite includes checks for the application health endpoint and frontend-serving route.
+
+**Verification:** The workflow completed successfully on GitHub Actions, with both tests passing and the backend and frontend images building successfully.
+
+This workflow demonstrates Continuous Integration (CI). It does not currently publish images to a container registry or deploy them automatically.
+
+## 5. GitOps Deployment – Argo CD
+
+Argo CD is installed in the local Kind cluster and connected to the GitHub repository.
+
+Application configuration:
+
+- Application name: `employee-management`
+- Repository: `https://github.com/Rajaneesh2410/eks-3tier-devops-project`
+- Branch: `main`
+- Manifest path: `k8s`
+- Destination namespace: `default`
+- Sync policy: Automatic
+
+The Argo CD application was verified with:
+
+- **Application health:** Healthy
+- **Sync status:** Synced
+
+Argo CD monitors the configured Git repository path and reconciles the Kubernetes resources with the declared manifests.
+
+The PostgreSQL Secret is created separately in the cluster and is not stored in the Git repository.
+
+## 6. Monitoring – Prometheus and Grafana
+
+The Prometheus Community `kube-prometheus-stack` Helm chart was installed in the `monitoring` namespace.
+
+Components deployed:
+
+- **Prometheus:** Collects and stores monitoring metrics.
+- **Grafana:** Provides dashboards for visualizing metrics.
+- **Alertmanager:** Handles alert notifications.
+- **Node Exporter:** Exposes node-level metrics.
+- **Kube State Metrics:** Exposes Kubernetes object and resource-state metrics.
+
+Install Helm repository and monitoring stack:
+
+```bash
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+helm repo update
+
+kubectl create namespace monitoring
+
+helm install monitoring prometheus-community/kube-prometheus-stack -n monitoring
+```
+
+Check monitoring pods:
+
+```bash
+kubectl get pods -n monitoring
+```
+
+### Access Grafana
+
+```bash
+kubectl port-forward svc/monitoring-grafana -n monitoring 3000:80
+```
+
+Open:
+
+```text
+http://localhost:3000
+```
+
+Get the initial admin password:
+
+```bash
+kubectl get secret monitoring-grafana -n monitoring \
+  -o jsonpath="{.data.admin-password}" | base64 -d
+echo
+```
+
+Login with username `admin` and the retrieved password.
+
+### Access Prometheus
+
+```bash
+kubectl port-forward svc/monitoring-kube-prometheus-prometheus -n monitoring 9090:9090
+```
+
+Open:
+
+```text
+http://localhost:9090
+```
+
+These port-forward commands provide temporary local access while their terminals remain running.
+
+## 7. Database and Storage
+
+PostgreSQL is deployed in Kubernetes with:
 
 - PostgreSQL 16 container image
 - PersistentVolumeClaim requesting 1 GiB storage
@@ -278,62 +393,66 @@ PostgreSQL is deployed as a Kubernetes Deployment with:
 
 The backend connects to PostgreSQL through the internal Kubernetes service named `postgres-service`.
 
-## Project Screenshots
+## 8. Project Screenshots
 
-### 1. Application Dashboard
+The repository includes screenshots demonstrating the application and deployment setup.
+
+### Application Dashboard
 
 ![Application Dashboard](screenshots/employee-management-project/01-application-dashboard.png)
 
-### 2. Database Records
+### Database Records
 
 ![Database Records](screenshots/employee-management-project/02-database-records.png)
 
-### 3. Docker Compose Containers
+### Docker Compose Containers
 
 ![Docker Compose](screenshots/employee-management-project/03-docker-compose.png)
 
-### 4. Docker Images
+### Docker Images
 
 ![Docker Images](screenshots/employee-management-project/04-docker-images.png)
 
-### 5. Kubernetes Pods
+### Kubernetes Pods
 
 ![Kubernetes Pods](screenshots/employee-management-project/05-kubernetes-pods.png)
 
-### 6. Kubernetes Services
+### Kubernetes Services
 
 ![Kubernetes Services](screenshots/employee-management-project/06-kubernetes-services.png)
 
-### 7. Kubernetes Deployments
+### Kubernetes Deployments
 
 ![Kubernetes Deployments](screenshots/employee-management-project/07-kubernetes-deployments.png)
 
-### 8. Terraform Plan
+### Terraform Plan
 
 ![Terraform Plan](screenshots/employee-management-project/08-terraform-plan.png)
 
-### 9. GitHub Repository
+### GitHub Repository
 
 ![GitHub Repository](screenshots/employee-management-project/09-github-repository.png)
 
-## Key DevOps Skills Demonstrated
+## 9. Key DevOps Skills Demonstrated
 
-- Containerizing frontend and backend applications using Docker.
+- Containerizing applications using Docker.
 - Managing multi-container applications using Docker Compose.
-- Configuring service-to-service communication.
+- Configuring application and database communication.
 - Deploying applications using Kubernetes Deployments and Services.
 - Managing persistent database storage using PVCs.
-- Handling database credentials using Kubernetes Secrets.
+- Managing application credentials using Kubernetes Secrets.
 - Provisioning local Kubernetes infrastructure using Terraform.
-- Managing source code and project documentation using Git and GitHub.
-- Troubleshooting container, networking, and Kubernetes deployment issues.
+- Automating tests and Docker image builds using GitHub Actions.
+- Implementing GitOps-based deployment using Argo CD.
+- Monitoring Kubernetes resources using Prometheus and Grafana.
+- Troubleshooting container, networking, storage, and Kubernetes deployment issues.
 
-## Future Improvements
+## 10. Future Improvements
 
-- Implement a complete CI/CD pipeline using Jenkins or GitHub Actions.
-- Integrate Argo CD for GitOps-based deployments.
-- Add Prometheus and Grafana for monitoring.
-- Introduce Kubernetes Ingress.
+- Add a container registry publishing stage to GitHub Actions.
+- Implement automated deployment after successful CI builds.
+- Configure Kubernetes Ingress and external access.
+- Add application-specific Grafana dashboards and alert rules.
 - Deploy the application to a managed cloud Kubernetes service.
 
 ## Author
@@ -341,4 +460,3 @@ The backend connects to PostgreSQL through the internal Kubernetes service named
 **Rajaneesh**
 
 GitHub: https://github.com/Rajaneesh2410
-
